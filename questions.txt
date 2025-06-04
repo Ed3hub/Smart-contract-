@@ -1,0 +1,8 @@
+1. Why should we prevent the transfer of certificate NFTs on Ed3hub? How would you enforce this?
+We should prevent transfers because certificates represent personal achievements—they show that a specific person completed a course. If people could transfer them, it would weaken the credibility of the system. To enforce this, we can disable all transfer functions in the contract, so once a certificate is given to a user, it stays tied to their wallet and can’t be moved to another one.
+
+2. What is a reentrancy attack, and how would you prevent it in a smart contract?
+A reentrancy attack happens when someone uses a loophole to call a contract over and over before the first action finishes. This can cause unexpected behavior or drain funds. To prevent this, we make sure that each sensitive action finishes before another one can start. A simple way to do this is by using a lock that stops the function from being run again until it’s done.
+
+3. Imagine we want to reward users who complete a course with 10 EDU tokens. How would you structure this in a secure and gas-efficient way?
+We can set up a token contract that holds EDU tokens. After a user gets their certificate, the main contract can send them 10 tokens in the same transaction. To keep it simple and secure, we avoid storing extra data or making repeated checks. The platform just needs to make sure each student only gets rewarded once, and the contract should send tokens directly without making unnecessary calls.
