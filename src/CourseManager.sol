@@ -171,6 +171,10 @@ contract CourseManager is ReentrancyGuard, Ownable(msg.sender) {
         require(cm.isActive && !cm.canceled, "not available");
         require(cm.priceETH > 0, "not payable by ETH");
         require(msg.value >= cm.priceETH, "insufficient ETH");
+        if (msg.value > cm.priceETH) {
+            (bool refunded,) = payable(msg.sender).call{value: msg.value - cm.priceETH}("");
+            require(refunded, "refund failed");
+        }
 
         //mark enrollment before external state modifications
         bool added = enrolled[courseId].add(msg.sender);
@@ -180,7 +184,7 @@ contract CourseManager is ReentrancyGuard, Ownable(msg.sender) {
         // payable(cm.instructor).transfer(msg.value);
 
         // compute the pltform fee
-        uint256 fee = (msg.value * platformFees) / 1000;
+        uint256 fee = (msg.value * platformFees) / 10000;
         uint256 instructorShare = msg.value - fee;
 
         // store in escrow (pull pattern)
@@ -208,7 +212,7 @@ contract CourseManager is ReentrancyGuard, Ownable(msg.sender) {
         tokenPaid[courseId][msg.sender] += price;
 
         //Give Instructor share
-        uint256 fee = (price * platformFees) / 1000;
+        uint256 fee = (price * platformFees) / 10000;
         uint256 instructorShare = price - fee;
 
         escrowToken[courseId][cm.instructor] += instructorShare;
@@ -239,7 +243,7 @@ contract CourseManager is ReentrancyGuard, Ownable(msg.sender) {
         require(amount > 0, "not enough Token");
         escrowToken[courseId][msg.sender] = 0;
 
-        IERC20(courses[courseId].priceToken).safeTransfer(msg.sender, amount);
+        IERC20(tokenAddr).safeTransfer(msg.sender, amount);
         emit InstructorWithdrawed(courseId, msg.sender, amount, "TOKEN");
     }
 
@@ -257,9 +261,20 @@ contract CourseManager is ReentrancyGuard, Ownable(msg.sender) {
         emit CourseCompleted(courseId, student, true);
 
         // Reward the student with tokens/NFt
-        // ed3token.mintReward(student, amount);
         ed3Nft.mintNftReward(student, "", courseId);
     }
+
+    function claimTokenReward(uint256 courseId) external courseExists(courseId) {
+    require(courseCompleted[courseId][msg.sender], "Course not completed");
+    require(!rewardClaimed[courseId][msg.sender], "Already claimed");
+
+    rewardClaimed[courseId][msg.sender] = true;
+
+    ed3token.mintReward(msg.sender, rewardAmount);
+
+    emit RewardClaimed(courseId, msg.sender, rewardAmount);
+}
+
 
     // Mint Reward
     function mintNftReward(address student, string calldata metadataUri, uint256 courseId)
@@ -280,8 +295,10 @@ contract CourseManager is ReentrancyGuard, Ownable(msg.sender) {
         return (tokenId);
     }
 
-    function setRewardConfig(address _ed3Token, uint256 _rewardAmount) external onlyOwner {
+    function setRewardConfig(address _ed3Token, uint256 _rewardAmount) 
+    external onlyOwner {
         require(_ed3Token != address(0), "Invalid token address");
+        require(_rewardAmount > 0, "Reward amount must be > 0");
         ed3token = IEd3Token(_ed3Token);
         rewardAmount = _rewardAmount;
     }
@@ -303,7 +320,7 @@ contract CourseManager is ReentrancyGuard, Ownable(msg.sender) {
 
     // ADMIN TO SET FEES
     function setCourseFees(uint16 feePtng, address _treasury) external onlyOwner {
-        require(feePtng <= 2000 ether, "fee too high");
+        require(feePtng <= 2000, "fee too high");
         require(_treasury != address(0), "Invalid treasury");
         platformFees = feePtng;
         treasury = _treasury;

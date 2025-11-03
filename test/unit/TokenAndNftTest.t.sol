@@ -93,10 +93,10 @@ contract TokenAndNftTest is Test {
         vm.startPrank(owner);
         ed3Nft.grantRole(ed3Nft.MINTER_ROLE(), minter);
         vm.stopPrank();
-        
+
         string memory metadataUri = "ipfs://example.metadata";
         uint256 courseId = 1;
-        
+
         vm.startPrank(minter);
         uint256 tokenId = ed3Nft.mintNftReward(student, metadataUri, courseId);
         vm.stopPrank();
@@ -107,11 +107,11 @@ contract TokenAndNftTest is Test {
     }
 
     function testMintNftRewardRevertsIfToIsZeroAddress() public {
-         vm.startPrank(owner);
+        vm.startPrank(owner);
         ed3Nft.grantRole(ed3Nft.MINTER_ROLE(), minter);
         vm.stopPrank();
 
-         string memory metadataUri = "ipfs://metadata";
+        string memory metadataUri = "ipfs://metadata";
         uint256 courseId = 1;
 
         vm.prank(student);
