@@ -1,0 +1,30 @@
+
+{
+  "name": "ed3learn-grow-earn-smart-contract",
+  "version": "1.0.0",
+  "description": "<<<<<<< HEAD # Ed3Hub ======= # 🎓 Ed3LearnEarn — A Web3 Educational Platform",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ed3hub/Smart-contract-.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Ed3hub/Smart-contract-/issues"
+  },
+  "homepage": "https://github.com/Ed3hub/Smart-contract-#readme",
+  "dependencies": {
+    "axios": "^1.13.2",
+    "dotenv": "^17.2.3",
+    "form-data": "^4.0.4"
+  }
+}

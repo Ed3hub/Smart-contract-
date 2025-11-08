@@ -66,7 +66,7 @@ contract TokenAndNftTest is Test {
     }
 
     function testMintNftRewardEmitsEvent() public {
-        string memory metadataUri = "ipfs://example.metadata";
+        string memory metadataUri = "ipfs://bafkreiged42egxlxf5lqhqk24nvffnhrfiaxtxtqlxybj7fdume346lfiu";
         uint256 courseId = 1;
 
         vm.startPrank(minter);
@@ -80,7 +80,7 @@ contract TokenAndNftTest is Test {
     }
 
     function testRevertsIfNotMinter() public {
-        string memory metadataUri = "ipfs://example.metadata";
+        string memory metadataUri = "ipfs://bafkreiged42egxlxf5lqhqk24nvffnhrfiaxtxtqlxybj7fdume346lfiu";
         uint256 courseId = 1;
 
         vm.startPrank(student);
@@ -94,8 +94,8 @@ contract TokenAndNftTest is Test {
         ed3Nft.grantRole(ed3Nft.MINTER_ROLE(), minter);
         vm.stopPrank();
 
-        string memory metadataUri = "ipfs://example.metadata";
-        uint256 courseId = 1;
+        string memory metadataUri = "ipfs://bafkreiged42egxlxf5lqhqk24nvffnhrfiaxtxtqlxybj7fdume346lfiu";
+        uint256 courseId = 0;
 
         vm.startPrank(minter);
         uint256 tokenId = ed3Nft.mintNftReward(student, metadataUri, courseId);
@@ -103,7 +103,7 @@ contract TokenAndNftTest is Test {
 
         assertEq(ed3Nft.ownerOf(tokenId), student);
         bool hasMinted = ed3Nft.hasMinted(courseId, student);
-        assertEq(hasMinted, false);
+        assertEq(hasMinted, true);
     }
 
     function testMintNftRewardRevertsIfToIsZeroAddress() public {

@@ -13,10 +13,17 @@ contract Ed3Nft is ERC721URIStorage, AccessControl, Ownable {
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     uint256 private _nextTokenId;
 
+    // Errors
+    error Ed3Nft__InvalidMetaUri();
+
     string private _baseTokenURI;
+    string public constant metadataUri = "ipfs://bafkreiged42egxlxf5lqhqk24nvffnhrfiaxtxtqlxybj7fdume346lfiu";
+
     // rewardNft.authorizeMinter(address(coursemanager));
 
     mapping(uint256 => mapping(address => bool)) public minted;
+    // mapping to get the token uri's
+    mapping(uint256 => string) private _tokenURIs;
 
     event RewardMinted(uint256 indexed tokenId, address indexed to, uint256 indexed courseId);
 
@@ -33,20 +40,28 @@ contract Ed3Nft is ERC721URIStorage, AccessControl, Ownable {
         _grantRole(MINTER_ROLE, courseManager);
     }
 
+    function hasMinted(uint256 courseId, address student) external view returns (bool) {
+        return minted[courseId][student];
+    }
+
     //Mint the reward NFT to the learner
-    function mintNftReward(address to, string calldata metadataUri, uint256 courseId)
+    function mintNftReward(address student, string calldata metadataUri, uint256 courseId)
         external
         onlyRole(MINTER_ROLE)
         returns (uint256)
     {
-        uint256 tokenId = _nextTokenId++;
-        _safeMint(to, tokenId);
-        //store the metadataUri for the tokenId
-        if (bytes(metadataUri).length > 0) {
-            //we'll store it in the tokenURI mapping
-            _setTokenURI(tokenId, metadataUri);
+        require(!minted[courseId][student], "Already minted");
+        if (bytes(metadataUri).length == 0) {
+            revert Ed3Nft__InvalidMetaUri();
         }
-        emit RewardMinted(tokenId, to, courseId);
+        uint256 tokenId = _nextTokenId++;
+        _safeMint(student, tokenId);
+
+        //store the metadataUri for the tokenId
+        _setTokenURI(tokenId, metadataUri);
+        minted[courseId][student] = true;
+
+        emit RewardMinted(tokenId, student, courseId);
         return tokenId;
     }
 
@@ -67,10 +82,6 @@ contract Ed3Nft is ERC721URIStorage, AccessControl, Ownable {
             return string(abi.encodePacked(_baseTokenURI, _toString(tokenId)));
         }
         return super.tokenURI(tokenId);
-    }
-
-    function hasMinted(uint256 courseId, address student) external view returns (bool) {
-        return minted[courseId][student];
     }
 
     // Override supportsInterface to include AccessControl

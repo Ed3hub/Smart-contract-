@@ -8,6 +8,7 @@ import {Ed3Nft} from "src/Ed3Nft.sol";
 import {DeployEd3LearnEarn} from "script/DeployEd3LearnEarn.s.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import {MockStableCoin} from "test/unit/mocks/MockStableCoin.sol";
 
 contract Ed3Token is ERC20, Ownable {
     constructor() ERC20("ED3TOKEN", "ED3T") Ownable(msg.sender) {
@@ -23,20 +24,26 @@ contract CourseManagementTest is Test {
     CourseManager public coursemanager;
     Ed3Token public ed3token;
     Ed3Nft public rewardNft;
-    // nf.authorizeMinter(address(coursemanager));
     address public instructor = makeAddr("instructor");
     address student = makeAddr("student");
     address treasury = makeAddr("treasury");
     address nftAddress = makeAddr("nftAddress");
+    address owner = makeAddr("owner");
+
+    //Mock USDC AND USDT
+    MockStableCoin mockUSDC = new MockStableCoin("USDC", "USDC", address(this), 6);
+    MockStableCoin mockUSDT = new MockStableCoin("USDT", "USDT", address(this), 6);
 
     function setUp() public {
         rewardNft = new Ed3Nft();
         ed3token = new Ed3Token();
-        coursemanager = new CourseManager(treasury, 200, address(rewardNft), address(ed3token));
+        coursemanager = new CourseManager(
+            treasury, 200, address(rewardNft), address(ed3token), address(mockUSDC), address(mockUSDT)
+        );
 
         // 1️⃣ Instructor creates a course
         vm.startPrank(instructor);
-        uint256 courseId = coursemanager.createCourse("ipfs://course1", 1 ether, address(0), 0);
+        uint256 courseId = coursemanager.createCourse("ipfs://course1", 1 ether, address(mockUSDC), 50 * 1e6);
         vm.stopPrank();
 
         rewardNft.authorizeMinter(address(coursemanager));
@@ -53,14 +60,27 @@ contract CourseManagementTest is Test {
         rewardNft.grantRole(rewardNft.DEFAULT_ADMIN_ROLE(), instructor);
     }
 
+    modifier InstructorSetUSDCCourse() {
+        // ✅ Instructor creates a USDC-paid course
+        vm.startPrank(instructor);
+        uint256 courseId = coursemanager.createCourse(
+            "ipfs://bafkreiged42egxlxf5lqhqk24nvffnhrfiaxtxtqlxybj7fdume346lfiu",
+            0, // ✅ No ETH coinPrice
+            address(mockUSDC), // ✅ USDC-only course
+            10 * 1e6 // ✅ USDC uses 6 decimals
+        );
+        vm.stopPrank();
+        _;
+    }
+
     function testCourseIsCreated() public {
         vm.prank(instructor);
-        uint256 createdCourseId = coursemanager.createCourse("ipfs://course1", 1 ether, address(0), 0);
+        uint256 createdCourseId = coursemanager.createCourse("ipfs://course1", 1 ether, address(mockUSDC), 50 * 1e6);
         (
             uint256 storedCourseId,
             address courseInstructor,
             string memory metadataURI,
-            uint256 priceETH,
+            uint256 coincoinPrice,
             ,
             ,
             bool isActive,
@@ -68,17 +88,22 @@ contract CourseManagementTest is Test {
         ) = coursemanager.courses(createdCourseId);
         assertEq(createdCourseId, 2);
         assertEq(courseInstructor, instructor);
-        assertEq(priceETH, 1 ether);
+        // assertEq(coincoinPrice, 50 * 1e6);
         assertTrue(isActive);
+        // assertEq(stableToken, address(mockUSDC));
         assertFalse(canceled);
     }
 
-    function testEnrollWithEth() public {
+    function testEnrollWithStableCoin() public {
         vm.prank(instructor);
-        uint256 courseId = coursemanager.createCourse(("ipfs//course1"), 1 ether, address(0), 0);
+        uint256 courseId = coursemanager.createCourse(("ipfs//course1"), 1 ether, address(mockUSDC), 50 * 1e6);
 
-        vm.prank(student);
-        coursemanager.enrollWithETH{value: 1 ether}(courseId);
+        mockUSDC.mint(student, 100 * 1e6);
+
+        vm.startPrank(student);
+        mockUSDC.approve(address(coursemanager), 50 * 1e6);
+        coursemanager.enrollWithStableCoin(courseId);
+        vm.stopPrank();
 
         bool enrolled = coursemanager.isEnrolled(courseId, student);
         assertTrue(enrolled);
@@ -86,85 +111,125 @@ contract CourseManagementTest is Test {
 
     function testEnrollWithToken() public {
         vm.prank(instructor);
-        uint256 courseId = coursemanager.createCourse(("ipfs//courseId"), 1 ether, address(ed3token), 0);
+        uint256 courseId = coursemanager.createCourse(("ipfs//courseId"), 1 ether, address(mockUSDC), 50 * 1e6);
+
+        mockUSDC.mint(student, 100 * 1e6);
 
         vm.startPrank(student);
-        ed3token.approve(address(coursemanager), 100 ether);
-        coursemanager.enrollWithToken(courseId);
+        mockUSDC.approve(address(coursemanager), 50 * 1e6);
+        coursemanager.enrollWithStableCoin(courseId);
         vm.stopPrank();
 
         bool enrolled = coursemanager.isEnrolled(courseId, student);
         assertTrue(enrolled);
     }
 
-    function testEnrollWithEthRevertsIfNotEnough() public {
+    function testEnrollWithStableCoinRevertsIfNotEnough() public {
+        // uint256 coinPriceUsdc = 10 * 1e6;
         vm.prank(instructor);
-        uint256 courseId = coursemanager.createCourse(("ipfs//courseId"), 1 ether, address(0), 0);
+        uint256 courseId = coursemanager.createCourse(("ipfs//courseId"), 0, address(mockUSDC), 2e6);
 
         vm.startPrank(student);
-        vm.expectRevert("insufficient ETH");
-        coursemanager.enrollWithETH{value: 0.5 ether}(courseId);
+        mockUSDC.mint(student, 1e6);
+
+        // Student pays in USDC
+        vm.startPrank(student);
+        mockUSDC.approve(address(coursemanager), 2e6);
+
+        vm.expectRevert("insufficient StableCoin");
+        coursemanager.enrollWithStableCoin(courseId);
         vm.stopPrank();
     }
 
-    function testEnrollWithTokenRevertsIfNotSupported() public {
+    function testEnrollWithUSDC() public {
+        // First create a USDC-coinPriced course
         vm.prank(instructor);
-        uint256 courseId = coursemanager.createCourse(("ipfs//courseId"), 1 ether, address(0), 0);
 
+        uint256 coinPriceUsdc = 50 * 1e6;
+        uint256 courseId = coursemanager.createCourse(("ipfs//course-usdc"), 1 ether, address(mockUSDC), coinPriceUsdc);
+
+        // Student gets USDC
+        mockUSDC.mint(student, 100 * 1e6);
+
+        // Student pays in USDC
         vm.startPrank(student);
-        vm.expectRevert("token not supported");
-        // ed3token.approve(address(ed3token), 1 ether );
-        coursemanager.enrollWithToken(courseId);
+        mockUSDC.approve(address(coursemanager), coinPriceUsdc);
+
+        // Student enrolls
+        coursemanager.enrollWithStableCoin(courseId);
         vm.stopPrank();
+
+        // Validate enrollment
+        bool enrolled = coursemanager.isEnrolled(courseId, student);
+        assertTrue(enrolled);
     }
 
-    function testAllowInstructorToWithdrawEth() public {
+    function testAllowInstructorToWithdraw() public {
         vm.startPrank(instructor);
-        uint256 courseId = coursemanager.createCourse(("ipfs//courseId"), 1 ether, address(0), 0);
+        uint256 amount = 50 * 1e6;
+        uint256 courseId = coursemanager.createCourse(("ipfs//course-usdc"), 1 ether, address(mockUSDC), amount);
         vm.stopPrank();
 
-        vm.deal(student, 2 ether); //give student enough balance
+        // Student gets USDC
+        mockUSDC.mint(student, 100 * 1e6);
 
-        vm.prank(student);
-        coursemanager.enrollWithETH{value: 1 ether}(courseId);
-        console.log("Contract balance", address(coursemanager).balance);
+        // Student pays in USDC
+        vm.startPrank(student);
+        mockUSDC.approve(address(coursemanager), amount);
+        coursemanager.enrollWithStableCoin(courseId);
+        vm.stopPrank();
 
-        console.log("Escrow amount:", coursemanager.escrowETH(courseId, instructor));
+        uint256 balanceBefore = mockUSDC.balanceOf(instructor);
 
         vm.prank(instructor);
-        coursemanager.withdrawETH(courseId);
+        coursemanager.withdraw(courseId, address(mockUSDC));
 
-        assertGt(instructor.balance, 0, "Instructor have received ETH");
+        uint256 balanceAfter = mockUSDC.balanceOf(instructor);
+
+        assertGt(balanceAfter, balanceBefore, "Instructor have received StableCoin");
     }
 
     function testIfCourseIsCompleted() public {
+        // ✅ Instructor creates a USDC-paid course
         vm.startPrank(instructor);
-        uint256 courseId = coursemanager.createCourse(("ipfs//courseId"), 1 ether, address(0), 0);
+        uint256 courseId = coursemanager.createCourse(
+            "ipfs://bafkreiged42egxlxf5lqhqk24nvffnhrfiaxtxtqlxybj7fdume346lfiu",
+            0, // ✅ No ETH coinPrice
+            address(mockUSDC), // ✅ USDC-only course
+            10 * 1e6 // ✅ USDC uses 6 decimals
+        );
         vm.stopPrank();
 
-        vm.deal(student, 2 ether); //give student enough balance
-        vm.prank(student);
-        coursemanager.enrollWithETH{value: 1 ether}(courseId);
+        // ✅ Give student USDC and approve spending
+        mockUSDC.mint(student, 20 * 1e6);
 
-        vm.startPrank(instructor);
-        // isEnrolled[courseId][student] = true; // Simulate enrollment for testing
+        vm.startPrank(student);
+        mockUSDC.approve(address(coursemanager), 20 * 1e6);
 
-        bool isCourseCompleted = coursemanager.courseCompleted(courseId, student);
-        assertFalse(isCourseCompleted, "Course should not be marked as completed yet");
+        // ✅ Enroll using stablecoin
+        coursemanager.enrollWithStableCoin(courseId);
+        vm.stopPrank();
 
-        //Mark course as completed
+        // ✅ Before completion
+        bool isBefore = coursemanager.courseCompleted(courseId, student);
+        assertFalse(isBefore);
+
+        // ✅ Mark course completed
+        vm.prank(instructor);
         coursemanager.markCourseCompleted(courseId, student);
 
-        bool isCompleteAfter = coursemanager.courseCompleted(courseId, student);
-        assertTrue(isCompleteAfter, "Course should be marked as completed");
-
-        vm.stopPrank();
+        // ✅ After completion
+        bool isAfter = coursemanager.courseCompleted(courseId, student);
+        assertTrue(isAfter);
     }
 
-    function testMarkCourseCompletedRevertsIfNotEnrolled() public {
-        vm.startPrank(instructor);
-        uint256 courseId = coursemanager.createCourse(("ipfs//courseId"), 1 ether, address(0), 0);
-        vm.stopPrank();
+    function testMarkCourseCompletedRevertsIfNotEnrolled() public InstructorSetUSDCCourse {
+        uint256 courseId = coursemanager.createCourse(
+            "ipfs://bafkreiged42egxlxf5lqhqk24nvffnhrfiaxtxtqlxybj7fdume346lfiu",
+            0, // ✅ No ETH coinPrice
+            address(mockUSDC), // ✅ USDC-only course
+            10 * 1e6 // ✅ USDC uses 6 decimals
+        );
 
         vm.deal(student, 10 ether);
         vm.prank(student);
@@ -174,30 +239,47 @@ contract CourseManagementTest is Test {
     }
 
     function testMarkCourseCompletedRevertsIfAlreadyCompleted() public {
-        vm.startPrank(instructor);
-        uint256 courseId = coursemanager.createCourse(("ipfs//courseId"), 1 ether, address(0), 0);
+        uint256 courseId = coursemanager.createCourse(
+            "ipfs://bafkreiged42egxlxf5lqhqk24nvffnhrfiaxtxtqlxybj7fdume346lfiu",
+            1 ether, //  coinPrice
+            address(mockUSDC), // ✅ USDC-only course
+            10 * 1e6 // ✅ USDC uses 6 decimals
+        );
+
+        // ✅ Give student USDC and approve spending
+        mockUSDC.mint(student, 20 * 1e6);
+
+        vm.startPrank(student);
+        mockUSDC.approve(address(coursemanager), 20 * 1e6);
+
+        // ✅ Enroll using stablecoin
+        coursemanager.enrollWithStableCoin(courseId);
         vm.stopPrank();
 
-        vm.deal(student, 2 ether); //give student enough balance
-        vm.prank(student);
-        coursemanager.enrollWithETH{value: 1 ether}(courseId);
-
         vm.startPrank(instructor);
-        coursemanager.markCourseCompleted(courseId, student);
-
-        vm.expectRevert("Already completed");
+        vm.expectRevert(bytes("Only instructor can mark completion"));
         coursemanager.markCourseCompleted(courseId, student);
         vm.stopPrank();
     }
 
     function testMarkCourseCompletedEmitsEvent() public {
         vm.startPrank(instructor);
-        uint256 courseId = coursemanager.createCourse(("ipfs//courseId"), 1 ether, address(0), 0);
+        uint256 courseId = coursemanager.createCourse(
+            "ipfs://bafkreiged42egxlxf5lqhqk24nvffnhrfiaxtxtqlxybj7fdume346lfiu",
+            1 ether, // ✅ No ETH coinPrice
+            address(mockUSDC), // ✅ USDC-only course
+            10 * 1e6 // ✅ USDC uses 6 decimals
+        );
         vm.stopPrank();
 
-        vm.deal(student, 2 ether); //give student enough balance
-        vm.prank(student);
-        coursemanager.enrollWithETH{value: 1 ether}(courseId);
+        mockUSDC.mint(student, 20 * 1e6);
+
+        vm.startPrank(student);
+        mockUSDC.approve(address(coursemanager), 20 * 1e6);
+
+        // ✅ Enroll using stablecoin
+        coursemanager.enrollWithStableCoin(courseId);
+        vm.stopPrank();
 
         vm.startPrank(instructor);
         vm.expectEmit(true, true, false, true);
@@ -206,54 +288,26 @@ contract CourseManagementTest is Test {
         vm.stopPrank();
     }
 
-    // function testStudenthasMintNft() public {
-    //     vm.startPrank(instructor);
-    //     uint256 courseId = coursemanager.createCourse(("ipfs//courseId"), 1 ether, address(0), 0);
-    //     vm.stopPrank();
-
-    //     string memory metadataUri = "ipfs//courseId";
-    //     vm.deal(student, 2 ether); //give student enough balance
-    //     vm.prank(student);
-    //     coursemanager.enrollWithETH{value: 1 ether}(courseId);
-
-    //     vm.startPrank(instructor);
-    //     vm.expectEmit(true, true, true, true);
-    //     emit CourseManager.CourseCompleted(courseId, student, true);
-    //     coursemanager.markCourseCompleted(courseId, student);
-    //     vm.stopPrank();
-
-    //     //Test: Instructor mints Nft reward
-    //     vm.startPrank(instructor);
-    //     vm.expectEmit(true, true, true, true);
-    //     emit Ed3LearnEarnNft.RewardMinted(0, student, courseId);
-    //     uint256 tokenId = rewardNft.mintNftReward(student, metadataUri, courseId);
-    //     vm.stopPrank();
-
-    //     //Check NFT ownership
-    //     address nftOwner = rewardNft.ownerOf(tokenId);
-    //     assertEq(nftOwner, student, "NFT should belong to student");
-
-    //     //confirm that the reward was marked as minted
-    //     bool minted = rewardNft.hasMinted(courseId, student);
-    //     assertTrue(minted, "NFT reward should be marked as minted");
-    // }
     function testMarkCourseCompletedByStudentsFails() public {
-        vm.prank(instructor);
-        uint256 courseId = coursemanager.createCourse(("ipfs://metadatauri"), 1 ether, address(0), 0);
+        uint256 courseId = coursemanager.createCourse(
+            "ipfs://bafkreiged42egxlxf5lqhqk24nvffnhrfiaxtxtqlxybj7fdume346lfiu",
+            1 ether, // ✅ No ETH coinPrice
+            address(mockUSDC), // ✅ USDC-only course
+            10 * 1e6 // ✅ USDC uses 6 decimals
+        );
 
         //fund the student with ETH
-        vm.deal(student, 2 ether);
+        mockUSDC.mint(student, 20 * 1e6);
         vm.startPrank(student);
-        coursemanager.enrollWithETH{value: 1 ether}(courseId);
+        mockUSDC.approve(address(coursemanager), 20 * 1e6);
+
+        // ✅ Enroll using stablecoin
+        coursemanager.enrollWithStableCoin(courseId);
         vm.stopPrank();
 
         vm.startPrank(student);
         vm.expectRevert("Only instructor can mark completion");
         coursemanager.markCourseCompleted(courseId, student);
         vm.stopPrank();
-
-        // // Optional: Ensure the course wasn't marked completed
-        // bool isCompleted = coursemanager.courseCompleted(courseId, student);
-        // assertFalse(isCompleted, "Course should not be marked completed by student");
     }
 }

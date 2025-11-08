@@ -1,0 +1,15 @@
+{
+  "name": "Course Completion NFT",
+  "description": "Earned after completing a course on Ed3 Learn & Earn platform.",
+  "image": "ipfs://QmeUki5Xk5NcRgN4mqmz3uBzCPsbNpYgMYaLRt4me1z5ab",
+  "attributes": [
+    {
+      "trait_type": "Platform",
+      "value": "Ed3 Learn & Earn"
+    },
+    {
+      "trait_type": "Course ID",
+      "value": 1
+    }
+  ]
+}
